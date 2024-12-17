@@ -16,7 +16,7 @@ if __name__ == "__main__":
     lv_list = [KL_TYPE.K_DAY]
 
     config = CChanConfig({
-        "triger_step": True,
+        "trigger_step": True,
         "divergence_rate": 0.8,
         "min_zs_cnt": 1,
     })
@@ -45,6 +45,8 @@ if __name__ == "__main__":
             continue
 
         cur_lv_chan = chan[0]
+        if last_bsp.klu.klc.idx != cur_lv_chan[-2].idx:
+            continue
         if cur_lv_chan[-2].fx == FX_TYPE.BOTTOM and last_bsp.is_buy and not is_hold:
             last_buy_price = cur_lv_chan[-1][-1].close
             print(f'{cur_lv_chan[-1][-1].time}:buy price = {last_buy_price}')

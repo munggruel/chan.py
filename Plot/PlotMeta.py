@@ -31,18 +31,18 @@ class CBi_meta:
         self.end_x = bi.get_end_klu().idx
         self.begin_y = bi.get_begin_val()
         self.end_y = bi.get_end_val()
-        self.id_sure = bi.is_sure
+        self.is_sure = bi.is_sure
 
 
 class CSeg_meta:
     def __init__(self, seg: CSeg):
-        if type(seg.start_bi) == CBi:
+        if isinstance(seg.start_bi, CBi):
             self.begin_x = seg.start_bi.get_begin_klu().idx
             self.begin_y = seg.start_bi.get_begin_val()
             self.end_x = seg.end_bi.get_end_klu().idx
             self.end_y = seg.end_bi.get_end_val()
         else:
-            assert type(seg.start_bi) == CSeg
+            assert isinstance(seg.start_bi, CSeg)
             self.begin_x = seg.start_bi.start_bi.get_begin_klu().idx
             self.begin_y = seg.start_bi.start_bi.get_begin_val()
             self.end_x = seg.end_bi.end_bi.get_end_klu().idx
@@ -58,7 +58,7 @@ class CSeg_meta:
 
     def format_tl(self, tl):
         assert tl.line
-        tl_slope = tl.line.slope
+        tl_slope = tl.line.slope + 1e-7
         tl_x = tl.line.p.x
         tl_y = tl.line.p.y
         tl_y0 = self.begin_y
@@ -123,6 +123,7 @@ class CChanPlotMeta:
         self.klu_len = sum(len(klc.klu_list) for klc in self.klc_list)
 
         self.bi_list = [CBi_meta(bi) for bi in kl_list.bi_list]
+
         self.seg_list: List[CSeg_meta] = []
         self.eigenfx_lst: List[CEigenFX_meta] = []
         for seg in kl_list.seg_list:
@@ -130,7 +131,13 @@ class CChanPlotMeta:
             if seg.eigen_fx:
                 self.eigenfx_lst.append(CEigenFX_meta(seg.eigen_fx))
 
-        self.segseg_list: List[CSeg_meta] = [CSeg_meta(segseg) for segseg in kl_list.segseg_list]
+        self.seg_eigenfx_lst: List[CEigenFX_meta] = []
+        self.segseg_list: List[CSeg_meta] = []
+        for segseg in kl_list.segseg_list:
+            self.segseg_list.append(CSeg_meta(segseg))
+            if segseg.eigen_fx:
+                self.seg_eigenfx_lst.append(CEigenFX_meta(segseg.eigen_fx))
+
         self.zs_lst: List[CZS_meta] = [CZS_meta(zs) for zs in kl_list.zs_list]
         self.segzs_lst: List[CZS_meta] = [CZS_meta(segzs) for segzs in kl_list.segzs_list]
 

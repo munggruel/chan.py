@@ -194,8 +194,10 @@ class CPlotDriver:
             self.DrawElement(plot_config[lv], meta, ax, lv, plot_para, ax_macd, x_limits)
 
             if lv != self.lv_lst[-1]:
-                sseg_begin = meta.sub_last_kseg_start_idx(slv_seg_cnt)
-                sbi_begin = meta.sub_last_kbi_start_idx(slv_bi_cnt)
+                if slv_seg_cnt is not None:
+                    sseg_begin = meta.sub_last_kseg_start_idx(slv_seg_cnt)
+                if slv_bi_cnt is not None:
+                    sbi_begin = meta.sub_last_kbi_start_idx(slv_bi_cnt)
                 if x_range != 0:
                     srange_begin = meta.sub_range_start_idx(x_range)
 
@@ -247,6 +249,8 @@ class CPlotDriver:
             self.draw_segseg(meta, ax, **plot_para.get('segseg', {}))
         if plot_config.get("plot_eigen", False):
             self.draw_eigen(meta, ax, **plot_para.get('eigen', {}))
+        if plot_config.get("plot_segeigen", False):
+            self.draw_segeigen(meta, ax, **plot_para.get('segeigen', {}))
         if plot_config.get("plot_zs", False):
             self.draw_zs(meta, ax, **plot_para.get('zs', {}))
         if plot_config.get("plot_segzs", False):
@@ -454,22 +458,32 @@ class CPlotDriver:
                     verticalalignment="top" if seg_meta.dir == BI_DIR.DOWN else "bottom",
                     horizontalalignment='center')
 
-    def draw_eigen(self, meta: CChanPlotMeta, ax: Axes, color_top="r", color_bottom="b", aplha=0.5, only_peak=False):
+    def plot_single_eigen(self, eigenfx_meta, ax, color_top, color_bottom, aplha, only_peak):
         x_begin = ax.get_xlim()[0]
+        color = color_top if eigenfx_meta.fx == FX_TYPE.TOP else color_bottom
+        for idx, eigen_meta in enumerate(eigenfx_meta.ele):
+            if eigen_meta.begin_x+eigen_meta.w < x_begin:
+                continue
+            if only_peak and idx != 1:
+                continue
+            ax.add_patch(
+                Rectangle(
+                    (eigen_meta.begin_x, eigen_meta.begin_y),
+                    eigen_meta.w,
+                    eigen_meta.h,
+                    fill=True,
+                    alpha=aplha,
+                    color=color
+                )
+            )
 
+    def draw_eigen(self, meta: CChanPlotMeta, ax: Axes, color_top="r", color_bottom="b", aplha=0.5, only_peak=False):
         for eigenfx_meta in meta.eigenfx_lst:
-            color = color_top if eigenfx_meta.fx == FX_TYPE.TOP else color_bottom
-            for idx, eigen_meta in enumerate(eigenfx_meta.ele):
-                if eigen_meta.begin_x+eigen_meta.w < x_begin:
-                    continue
-                if only_peak and idx != 1:
-                    continue
-                ax.add_patch(Rectangle((eigen_meta.begin_x, eigen_meta.begin_y),
-                             eigen_meta.w,
-                             eigen_meta.h,
-                             fill=True,
-                             alpha=aplha,
-                             color=color))
+            self.plot_single_eigen(eigenfx_meta, ax, color_top, color_bottom, aplha, only_peak)
+
+    def draw_segeigen(self, meta: CChanPlotMeta, ax: Axes, color_top="r", color_bottom="b", aplha=0.5, only_peak=False):
+        for eigenfx_meta in meta.seg_eigenfx_lst:
+            self.plot_single_eigen(eigenfx_meta, ax, color_top, color_bottom, aplha, only_peak)
 
     def draw_zs(
         self,
@@ -515,12 +529,12 @@ class CPlotDriver:
         assert macd_lst[0] is not None, "you can't draw macd until you delete macd_metric=False"
 
         x_begin = x_limits[0]
-        x_idx = range(len(macd_lst))
-        dif_line = [macd.DIF for macd in macd_lst]
-        dea_line = [macd.DEA for macd in macd_lst]
-        macd_bar = [macd.macd for macd in macd_lst]
-        y_min = min([min(dif_line[x_begin:]), min(dea_line[x_begin:]), min(macd_bar[x_begin:])])
-        y_max = max([max(dif_line[x_begin:]), max(dea_line[x_begin:]), max(macd_bar[x_begin:])])
+        x_idx = range(len(macd_lst))[x_begin:]
+        dif_line = [macd.DIF for macd in macd_lst[x_begin:]]
+        dea_line = [macd.DEA for macd in macd_lst[x_begin:]]
+        macd_bar = [macd.macd for macd in macd_lst[x_begin:]]
+        y_min = min([min(dif_line), min(dea_line), min(macd_bar)])
+        y_max = max([max(dif_line), max(dea_line), max(macd_bar)])
         ax.plot(x_idx, dif_line, "#FFA500")
         ax.plot(x_idx, dea_line, "#0000ff")
         _bar = ax.bar(x_idx, macd_bar, color="r", width=width)
@@ -620,7 +634,7 @@ class CPlotDriver:
             arrow_l=arrow_l,
             arrow_h=arrow_h,
             arrow_w=arrow_w,
-            )
+        )
 
     def update_y_range(self, text_box, text_y):
         text_height = text_box.y1 - text_box.y0
@@ -640,26 +654,37 @@ class CPlotDriver:
             )
 
     def draw_marker(
-            self,
-            meta: CChanPlotMeta,
-            ax: Axes,
-            markers: Dict[CTime | str, Tuple[str, Literal['up', 'down'], str] | Tuple[str, Literal['up', 'down']]],
-            arrow_l=0.15,
-            arrow_h_r=0.2,
-            arrow_w=1,
-            fontsize=14,
-            default_color='b',
+        self,
+        meta: CChanPlotMeta,
+        ax: Axes,
+        markers: Dict[CTime | str, Tuple[str, Literal['up', 'down'], str] | Tuple[str, Literal['up', 'down']]],
+        arrow_l=0.15,
+        arrow_h_r=0.2,
+        arrow_w=1,
+        fontsize=14,
+        default_color='b',
     ):
         # {'2022/03/01': ('xxx', 'up', 'red'), '2022/03/02': ('yyy', 'down')}
         x_begin, x_end = ax.get_xlim()
         datetick_dict = {date: idx for idx, date in enumerate(meta.datetick)}
+
+        new_marker = {}
+        for klu in meta.klu_iter():
+            for date, marker in markers.items():
+                date_str = date.to_str() if isinstance(date, CTime) else date
+                if klu.include_sub_lv_time(date_str) and klu.time.to_str() != date_str:
+                    new_marker[klu.time.to_str()] = marker
+        new_marker.update(markers)
+
         kl_dict = dict(enumerate(meta.klu_iter()))
         y_range = self.y_max-self.y_min
         arror_len = arrow_l*y_range
         arrow_h = arror_len*arrow_h_r
-        for date, marker in markers.items():
+        for date, marker in new_marker.items():
             if isinstance(date, CTime):
                 date = date.to_str()
+            if date not in datetick_dict:
+                continue
             x = datetick_dict[date]
             if x < x_begin or x > x_end:
                 continue
@@ -792,7 +817,7 @@ def getTextBox(ax: Axes, txt_instance):
 
 
 def plot_bi_element(bi: CBi_meta, ax: Axes, color: str):
-    if bi.id_sure:
+    if bi.is_sure:
         ax.plot([bi.begin_x, bi.end_x], [bi.begin_y, bi.end_y], color=color)
     else:
         ax.plot([bi.begin_x, bi.end_x], [bi.begin_y, bi.end_y], linestyle='dashed', color=color)
@@ -803,7 +828,7 @@ def bi_text(bi_idx, ax: Axes, bi, end_fontsize, end_color):
         ax.text(
             bi.begin_x,
             bi.begin_y,
-            f'{bi.begin_y:.2f}',
+            f'{bi.begin_y:.5f}',
             fontsize=end_fontsize,
             color=end_color,
             verticalalignment="top" if bi.dir == BI_DIR.UP else "bottom",
@@ -811,7 +836,7 @@ def bi_text(bi_idx, ax: Axes, bi, end_fontsize, end_color):
     ax.text(
         bi.end_x,
         bi.end_y,
-        f'{bi.end_y:.2f}',
+        f'{bi.end_y:.5f}',
         fontsize=end_fontsize,
         color=end_color,
         verticalalignment="top" if bi.dir == BI_DIR.DOWN else "bottom",
@@ -825,7 +850,7 @@ def show_func_helper(func):
         if para.default == inspect.Parameter.empty:
             continue
             # print(f"\t{name}*")
-        elif type(para.default) == str:
+        elif isinstance(para.default, str):
             print(f"\t{name}: '{para.default}'")
         else:
             print(f"\t{name}: {para.default}")

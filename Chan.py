@@ -14,27 +14,6 @@ from KLine.KLine_List import CKLine_List
 from KLine.KLine_Unit import CKLine_Unit
 
 
-def GetStockAPI(src):
-    _dict = {}
-    if src == DATA_SRC.BAO_STOCK:
-        from DataAPI.BaoStockAPI import CBaoStock
-        _dict[DATA_SRC.BAO_STOCK] = CBaoStock
-    elif src == DATA_SRC.CCXT:
-        from DataAPI.ccxt import CCXT
-        _dict[DATA_SRC.CCXT] = CCXT
-    elif src == DATA_SRC.CSV:
-        from DataAPI.csvAPI import CSV_API
-        _dict[DATA_SRC.CSV] = CSV_API
-    if src in _dict:
-        return _dict[src]
-    if src.find("custom:") < 0:
-        raise CChanException("load src type error", ErrCode.SRC_DATA_TYPE_ERR)
-    package_info = src.split(":")[1]
-    package_name, cls_name = package_info.split(".")
-    exec(f"from DataAPI.{package_name} import {cls_name}")
-    return eval(cls_name)
-
-
 class CChan:
     def __init__(
         self,
@@ -67,7 +46,7 @@ class CChan:
 
         self.do_init()
 
-        if not config.triger_step:
+        if not config.trigger_step:
             for _ in self.load():
                 ...
 
@@ -125,6 +104,8 @@ class CChan:
     def get_next_lv_klu(self, lv_idx):
         if isinstance(lv_idx, int):
             lv_idx = self.lv_list[lv_idx]
+        if len(self.g_kl_iter[lv_idx]) == 0:
+            raise StopIteration
         try:
             return self.g_kl_iter[lv_idx][0].__next__()
         except StopIteration:
@@ -135,10 +116,10 @@ class CChan:
                 raise
 
     def step_load(self):
-        assert self.conf.triger_step
+        assert self.conf.trigger_step
         self.do_init()  # 清空数据，防止再次重跑没有数据
         yielded = False  # 是否曾经返回过结果
-        for idx, snapshot in enumerate(self.load(self.conf.triger_step)):
+        for idx, snapshot in enumerate(self.load(self.conf.trigger_step)):
             if idx < self.conf.skip_step:
                 continue
             yield snapshot
@@ -147,7 +128,6 @@ class CChan:
             yield self
 
     def trigger_load(self, inp):
-        # 在已有pickle基础上继续计算新的
         # {type: [klu, ...]}
         if not hasattr(self, 'klu_cache'):
             self.klu_cache: List[Optional[CKLine_Unit]] = [None for _ in self.lv_list]
@@ -158,10 +138,15 @@ class CChan:
                 if lv_idx == 0:
                     raise CChanException(f"最高级别{lv}没有传入数据", ErrCode.NO_DATA)
                 continue
+            for klu in inp[lv]:
+                klu.kl_type = lv
             assert isinstance(inp[lv], list)
             self.add_lv_iter(lv, iter(inp[lv]))
         for _ in self.load_iterator(lv_idx=0, parent_klu=None, step=False):
             ...
+        if not self.conf.trigger_step:  # 非回放模式全部算完之后才算一次中枢和线段
+            for lv in self.lv_list:
+                self.kl_datas[lv].cal_seg_and_zs()
 
     def init_lv_klu_iter(self, stockapi_cls):
         # 为了跳过一些获取数据失败的级别
@@ -181,8 +166,29 @@ class CChan:
         self.lv_list = valid_lv_list
         return lv_klu_iter
 
+    def GetStockAPI(self):
+        _dict = {}
+        if self.data_src == DATA_SRC.BAO_STOCK:
+            from DataAPI.BaoStockAPI import CBaoStock
+            _dict[DATA_SRC.BAO_STOCK] = CBaoStock
+        elif self.data_src == DATA_SRC.CCXT:
+            from DataAPI.ccxt import CCXT
+            _dict[DATA_SRC.CCXT] = CCXT
+        elif self.data_src == DATA_SRC.CSV:
+            from DataAPI.csvAPI import CSV_API
+            _dict[DATA_SRC.CSV] = CSV_API
+        if self.data_src in _dict:
+            return _dict[self.data_src]
+        assert isinstance(self.data_src, str)
+        if self.data_src.find("custom:") < 0:
+            raise CChanException("load src type error", ErrCode.SRC_DATA_TYPE_ERR)
+        package_info = self.data_src.split(":")[1]
+        package_name, cls_name = package_info.split(".")
+        exec(f"from DataAPI.{package_name} import {cls_name}")
+        return eval(cls_name)
+
     def load(self, step=False):
-        stockapi_cls = GetStockAPI(self.data_src)
+        stockapi_cls = self.GetStockAPI()
         try:
             stockapi_cls.do_init()
             for lv_idx, klu_iter in enumerate(self.init_lv_klu_iter(stockapi_cls)):
@@ -227,6 +233,7 @@ class CChan:
         # K线时间天级别以下描述的是结束时间，如60M线，每天第一根是10点30的
         # 天以上是当天日期
         cur_lv = self.lv_list[lv_idx]
+        pre_klu = self[lv_idx][-1][-1] if len(self[lv_idx]) > 0 and len(self[lv_idx][-1]) > 0 else None
         while True:
             if self.klu_cache[lv_idx]:
                 kline_unit = self.klu_cache[lv_idx]
@@ -245,6 +252,8 @@ class CChan:
             if parent_klu and kline_unit.time > parent_klu.time:
                 self.klu_cache[lv_idx] = kline_unit
                 break
+            kline_unit.set_pre_klu(pre_klu)
+            pre_klu = kline_unit
             self.add_new_kl(cur_lv, kline_unit)
             if parent_klu:
                 self.set_klu_parent_relation(parent_klu, kline_unit, cur_lv, lv_idx)

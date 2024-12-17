@@ -18,9 +18,8 @@ class CBi:
         self.set(begin_klc, end_klc)
 
         self.__is_sure = is_sure
-        self.__sure_end = None
+        self.__sure_end: List[CKLine] = []
 
-        self.__klc_lst: List[CKLine] = []
         self.__seg_idx: Optional[int] = None
 
         from Seg.Seg import CSeg
@@ -57,7 +56,22 @@ class CBi:
     def sure_end(self): return self.__sure_end
 
     @property
-    def klc_lst(self): return self.__klc_lst
+    def klc_lst(self):
+        klc = self.begin_klc
+        while True:
+            yield klc
+            klc = klc.next
+            if not klc or klc.idx > self.end_klc.idx:
+                break
+
+    @property
+    def klc_lst_re(self):
+        klc = self.end_klc
+        while True:
+            yield klc
+            klc = klc.pre
+            if not klc or klc.idx < self.begin_klc.idx:
+                break
 
     @property
     def seg_idx(self): return self.__seg_idx
@@ -146,20 +160,17 @@ class CBi:
         return self.dir == BI_DIR.UP
 
     def update_virtual_end(self, new_klc: CKLine):
-        self.__sure_end = self.end_klc
+        self.append_sure_end(self.end_klc)
         self.update_new_end(new_klc)
         self.__is_sure = False
-        self.clean_cache()
 
-    def restore_from_virtual_end(self):
+    def restore_from_virtual_end(self, sure_end: CKLine):
         self.__is_sure = True
-        assert self.sure_end is not None
-        self.update_new_end(new_klc=self.sure_end)
-        self.__sure_end = None
-        self.clean_cache()
+        self.update_new_end(new_klc=sure_end)
+        self.__sure_end = []
 
-    def is_virtual_end(self):
-        return self.sure_end is not None
+    def append_sure_end(self, klc: CKLine):
+        self.__sure_end.append(klc)
 
     def update_new_end(self, new_klc: CKLine):
         self.__end_klc = new_klc
@@ -204,9 +215,14 @@ class CBi:
     @make_cache
     def Cal_MACD_area(self):
         _s = 1e-7
+        begin_klu = self.get_begin_klu()
+        end_klu = self.get_end_klu()
         for klc in self.klc_lst:
             for klu in klc.lst:
-                _s += abs(klu.macd.macd)
+                if klu.idx < begin_klu.idx or klu.idx > end_klu.idx:
+                    continue
+                if (self.is_down() and klu.macd.macd < 0) or (self.is_up() and klu.macd.macd > 0):
+                    _s += abs(klu.macd.macd)
         return _s
 
     @make_cache
@@ -250,7 +266,7 @@ class CBi:
         _s = 1e-7
         begin_klu = self.get_end_klu()
         peak_macd = begin_klu.macd.macd
-        for klc in self.klc_lst[::-1]:
+        for klc in self.klc_lst_re:
             for klu in klc[::-1]:
                 if klu.idx > begin_klu.idx:
                     continue
@@ -306,5 +322,5 @@ class CBi:
                 _s += metric_res
         return _s / self.get_klu_cnt() if cal_avg else _s
 
-    def set_klc_lst(self, lst):
-        self.__klc_lst = lst
+    # def set_klc_lst(self, lst):
+    #     self.__klc_lst = lst

@@ -58,6 +58,9 @@ class CKLine_List:
             klus_new = []
             for klu in klc.lst:
                 new_klu = copy.deepcopy(klu, memo)
+                memo[id(klu)] = new_klu
+                if klu.pre is not None:
+                    new_klu.set_pre_klu(memo[id(klu.pre)])
                 klus_new.append(new_klu)
 
             new_klc = CKLine(klus_new[0], idx=klc.idx, _dir=klc.dir)
@@ -106,14 +109,12 @@ class CKLine_List:
         self.segzs_list.cal_bi_zs(self.seg_list, self.segseg_list)
         update_zs_in_seg(self.seg_list, self.segseg_list, self.segzs_list)  # 计算segseg的zs_lst，以及中枢的bi_in, bi_out
 
-        self.update_klc_in_bi()  # 计算每一笔里面的 klc列表
-
         # 计算买卖点
         self.seg_bs_point_lst.cal(self.seg_list, self.segseg_list)  # 线段线段买卖点
         self.bs_point_lst.cal(self.bi_list, self.seg_list)  # 再算笔买卖点
 
     def need_cal_step_by_step(self):
-        return self.config.triger_step
+        return self.config.trigger_step
 
     def add_single_klu(self, klu: CKLine_Unit):
         klu.set_metric(self.metric_model_lst)
@@ -134,26 +135,49 @@ class CKLine_List:
         for klc in self.lst[klc_begin_idx:]:
             yield from klc.lst
 
-    def update_klc_in_bi(self):
-        for bi in self.bi_list:
-            bi.set_klc_lst(self[bi.begin_klc.idx:bi.end_klc.idx+1])
 
-
-def cal_seg(bi_list, seg_list):
+def cal_seg(bi_list, seg_list: CSegListComm):
     seg_list.update(bi_list)
-    # 计算每一笔属于哪个线段
-    bi_seg_idx_dict = {}
-    for seg_idx, seg in enumerate(seg_list):
-        for i in range(seg.start_bi.idx, seg.end_bi.idx+1):
-            bi_seg_idx_dict[i] = seg_idx
-    for bi in bi_list:
-        bi.set_seg_idx(bi_seg_idx_dict.get(bi.idx, len(seg_list)))  # 找不到的应该都是最后一个线段的
+
+    sure_seg_cnt = 0
+    if len(seg_list) == 0:
+        for bi in bi_list:
+            bi.set_seg_idx(0)
+        return
+    begin_seg: CSeg = seg_list[-1]
+    for seg in seg_list[::-1]:
+        if seg.is_sure:
+            sure_seg_cnt += 1
+        else:
+            sure_seg_cnt = 0
+        begin_seg = seg
+        if sure_seg_cnt > 2:
+            break
+
+    cur_seg: CSeg = seg_list[-1]
+    for bi in bi_list[::-1]:
+        if bi.seg_idx is not None and bi.idx < begin_seg.start_bi.idx:
+            break
+        if bi.idx > cur_seg.end_bi.idx:
+            bi.set_seg_idx(cur_seg.idx+1)
+            continue
+        if bi.idx < cur_seg.start_bi.idx:
+            assert cur_seg.pre
+            cur_seg = cur_seg.pre
+        bi.set_seg_idx(cur_seg.idx)
 
 
 def update_zs_in_seg(bi_list, seg_list, zs_list):
-    for seg in seg_list:
+    sure_seg_cnt = 0
+    for seg in seg_list[::-1]:
+        if seg.ele_inside_is_sure:
+            break
+        if seg.is_sure:
+            sure_seg_cnt += 1
         seg.clear_zs_lst()
-        for zs in zs_list:
+        for zs in zs_list[::-1]:
+            if zs.end.idx < seg.start_bi.get_begin_klu().idx:
+                break
             if zs.is_inside(seg):
                 seg.add_zs(zs)
             assert zs.begin_bi.idx > 0
@@ -161,3 +185,7 @@ def update_zs_in_seg(bi_list, seg_list, zs_list):
             if zs.end_bi.idx+1 < len(bi_list):
                 zs.set_bi_out(bi_list[zs.end_bi.idx+1])
             zs.set_bi_lst(list(bi_list[zs.begin_bi.idx:zs.end_bi.idx+1]))
+
+        if sure_seg_cnt > 2:
+            if not seg.ele_inside_is_sure:
+                seg.ele_inside_is_sure = True

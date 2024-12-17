@@ -495,7 +495,7 @@ plot_para = {
     },
 }  # 空格绘图元素详细配置，详见后文
 
-if not config.triger_step:  # 绘制静态图
+if not config.trigger_step:  # 绘制静态图
     plot_driver = CPlotDriver(
         chan,
         plot_config=plot_config,
@@ -612,9 +612,9 @@ else:  # 绘制动画
     - cal_kdj: 是否计算kdj指标，默认为False
     - kdj:
         - kdj_cycle: kdj计算周期，默认为9
-    - triger_step：是否回放逐步返回，默认为 False
+    - trigger_step：是否回放逐步返回，默认为 False
         - 用于逐步回放绘图时使用，此时 CChan 会变成一个生成器，每读取一根新K线就会计算一次当前所有指标，返回当前帧指标状况；常用于返回给 CAnimateDriver 绘图
-    - skip_step：triger_step 为 True 时有效，指定跳过前面几根K线，默认为 0；
+    - skip_step：trigger_step 为 True 时有效，指定跳过前面几根K线，默认为 0；
     - kl_data_check：是否需要检验K线数据，检查项包括时间线是否有乱序，大小级别K线是否有缺失；默认为 True
     - max_kl_misalgin_cnt：在次级别找不到K线最大条数，默认为 2（次级别数据有缺失），`kl_data_check` 为 True 时生效
     - max_kl_inconsistent_cnt：天K线以下（包括）子级别和父级别日期不一致最大允许条数（往往是父级别数据有缺失），默认为 5，`kl_data_check` 为 True 时生效
@@ -634,7 +634,7 @@ else:  # 绘制动画
     - divergence_rate：1类买卖点背驰比例，即离开中枢的笔的 MACD 指标相对于进入中枢的笔，默认为 0.9
     - min_zs_cnt：1类买卖点至少要经历几个中枢，默认为 1
     - bsp1_only_multibi_zs: `min_zs_cnt` 计算的中枢至少 3 笔（少于 3 笔是因为开启了 `one_bi_zs` 参数），默认为 True；
-    - max_bs2_rate：2类买卖点那一笔回撤最大比例，默认为 0.618
+    - max_bs2_rate：2类买卖点那一笔回撤最大比例，默认为 0.9999
         - 注：如果是 1.0，那么相当于允许回测到1类买卖点的位置
     - bs1_peak：1类买卖点位置是否必须是整个中枢最低点，默认为 True
     - macd_algo：MACD指标算法（可自定义）
@@ -697,7 +697,7 @@ config = CChanConfig({
     "zs_combine_mode": "zs",
     "bi_strict": True,
     "mean_metrics": [],
-    "triger_step": False,
+    "trigger_step": False,
     "skip_step": 0,
     "seg_algo": "chan",
     "divergence_rate": 0.9,
@@ -727,6 +727,7 @@ CPlotDriver 和 CAnimateDriver 参数，用于控制绘制哪些元素
 - plot_eigen：画特征序列（一般调试用），默认为 False
 - plot_zs：画中枢，默认为 False
 - plot_segseg：画线段分段，默认为 False
+- plot_segeigen：画线段分段的特征序列（一般调试用），默认为 False
 - plot_bsp：画理论买卖点，默认为 False
 - plot_cbsp：画自定义策略买卖点位置，默认为 False
 - plot_segzs：画线段中枢，默认为 False
@@ -736,10 +737,10 @@ CPlotDriver 和 CAnimateDriver 参数，用于控制绘制哪些元素
 - plot_boll：画布林线，默认为 False
 - plot_mean：画均线，默认为 False
 - plot_tradeinfo：绘制配置的额外信息（在另一根 y 轴上），默认为 False
-- ploy_marker: 添加自定义文本标记
-- ploy_demark: 绘制Demark指标
-- ploy_rsi: 绘制rsi指标
-- ploy_kdj: 绘制kdj指标
+- plot_marker: 添加自定义文本标记
+- plot_demark: 绘制Demark指标
+- plot_rsi: 绘制rsi指标
+- plot_kdj: 绘制kdj指标
 
 其中这个参数有几种写法：
 - 字典：比如`{"plot_bi": True, "plot_seg": True}`
@@ -820,7 +821,7 @@ CPlotDriver 和 CAnimateDriver 参数，用于控制绘制哪些元素
 
 <img src="./Image/chan.py_image_11.png" />
 
-- eigen:  特征序列（`CChanConfig` 中 `seg_algo` 设置为 `chan` 时有效）
+- eigen/segeigen:  特征序列（`CChanConfig` 中 `seg_algo` 设置为 `chan` 时有效）
     - color_top: 'r'  顶分型颜色
     - color_bottom: 'b'  底分型颜色
     - aplha: 0.5  透明度
@@ -955,7 +956,7 @@ CPlotDriver 和 CAnimateDriver 参数，用于控制绘制哪些元素
 
 #### 段内中枢
 中枢满足：
-- 上升线段起始笔为下上下，下降线段起始笔为下上下
+- 上升线段起始笔为下上下，下降线段起始笔为上下上
 - 中枢一定是奇数笔
 - 中枢不跨段（即便后一段为虚段）
 
